@@ -8,14 +8,17 @@ use async_std::prelude::*;
 
 #[async_std::main]
 async fn main() {
-    let mut stream = TcpStream::connect("google.com:80").await.unwrap();
-    stream.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
-
-    let mut res = Output::new(stream);
+    let mut res = request().await;
     let mut data = vec![0u8; 1024];
     res.read(&mut data).await.unwrap();
 
     println!("{:?}", data);
+}
+
+async fn request() -> Output<TcpStream> {
+    let mut stream = TcpStream::connect("google.com:80").await.unwrap();
+    stream.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
+    Output::new(stream)
 }
 
 pub struct Output<R> {
