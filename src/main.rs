@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::marker::Unpin;
 use async_std::io::Read;
 use async_std::task::{Context, Poll};
 use async_std::io;
@@ -8,48 +9,48 @@ use async_std::prelude::*;
 #[async_std::main]
 async fn main() {
     let mut stream = TcpStream::connect("google.com:80").await.unwrap();
-    stream.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+    stream.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
 
     let mut res = Output::new(stream);
-    let mut data = Vec::new();
-    res.read_to_end(&mut data).await;
+    let mut data = vec![0u8; 1024];
+    res.read(&mut data).await.unwrap();
 
     println!("{:?}", data);
 }
 
-pub struct Output {
-    stream: Pin<Box<dyn Read>>,
+pub struct Output<R> {
+    stream: R,
 }
 
-impl Output {
-    pub fn new<S: 'static>(stream: S) -> Self
-        where
-        S: Read + Unpin,
-    {
+impl<R> Unpin for Output<R> {}
+
+impl<R> Output<R> {
+    pub fn new(stream: R) -> Self {
         Self {
-            stream: Box::pin(stream),
+            stream,
         }
     }
 }
 
-impl Read for Output {
+impl<R: Read + Unpin> Read for Output<R> {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut &*self).poll_read(cx, buf)
+        Pin::new(&mut self.stream).poll_read(cx, buf)
     }
 }
 
-impl Read for &Output {
+impl<'a, R> Read for &'a Output<R>
+where
+    &'a R: Read,
+{
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let s = Pin::into_inner(self);
-        (&mut (&*s.stream)).read(buf);
-        Pin::new(&mut (&*s.stream)).poll_read(cx, buf)
+        Pin::new(&mut &self.stream).poll_read(cx, buf)
     }
 }
